@@ -1,0 +1,52 @@
+scenarios:
+  AUT: ['austria']
+  DEU: ['germany']
+  DNK: ['denmark']
+  ESP: ['spain']
+  FIN: ['finland']
+  FRA: ['france']
+  GBR: ['great_britain']
+  HUN: ['hungary']
+  NLD: ['netherlands']
+  POL: ['poland']
+  SWE: ['sweden']
+
+overrides:
+  austria:
+    techs:
+      solar:
+        flow_cap_max:
+      onshore_wind:
+        flow_cap_max:
+      offshore_wind:
+        flow_cap_max:
+      nuclear:
+        flow_cap_max:
+      biomass_ccgt:
+        flow_cap_max:
+      hydro_run_of_river:
+        flow_cap_max:
+      geothermal:
+        flow_cap_max:
+      battery_2h:
+        storage_cap_max:
+      battery_4h:
+        storage_cap_max:
+      battery_8h:
+        storage_cap_max:
+      compressed_air_storage:
+        storage_cap_max:
+      pumped_hydro:
+        storage_cap_max:
+      salt_cavern:
+        storage_cap_max:
+      depleted_gas_field:
+        storage_cap_max:
+      saline_aquifer:
+        storage_cap_max:
+      lined_rock_cavern:
+        storage_cap_max:
+      electrolyser:
+        flow_cap_max:
+      h2_ccgt:
+        flow_cap_max:

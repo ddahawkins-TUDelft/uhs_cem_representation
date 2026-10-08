@@ -1,0 +1,52 @@
+[workspace]
+authors = ["Dano Hawkins <d.d.a.hawkins@tudelft.nl>"]
+channels = ["conda-forge","gurobi"]
+name = "uhs_cem_representation"
+platforms = ["win-64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+python = ">=3.12.*"
+
+# Energy-system modelling
+calliope = ">=0.7.0"
+gurobi = "*"
+pyomo = "*"
+
+# Scientific stack
+numpy = "*"
+pandas = "*"
+scipy = "*"
+scikit-learn = "*"
+xarray = "*"
+netcdf4 = "*"
+
+# Results storage
+pyarrow = "*"
+
+# Configuration
+pyyaml = "*"
+
+
+
+[feature.dev.dependencies]
+
+# Plotting
+matplotlib = "*"
+
+pytest = "*"
+pytest-cov = "*"
+ruff = "*"
+ipykernel = "*"
+
+[feature.dev.tasks]
+test = "pytest"
+lint = "ruff check ."
+format = "ruff format ."
+format-check = "ruff format --check ."
+
+[environments]
+default = { features = ["dev"], solve-group = "main" }
+delftblue = { features = [], solve-group = "main" }

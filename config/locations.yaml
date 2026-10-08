@@ -1,0 +1,26 @@
+nodes:
+  general_node:
+    techs:
+      #generation
+      solar:
+      onshore_wind:
+      offshore_wind:
+      nuclear:
+      biomass:
+      hydro_run_of_river:
+      geothermal:
+      #storage
+      battery_2h:
+      battery_4h:
+      battery_8h:
+      compressed_air_storage:
+      pumped_hydro:
+      salt_cavern:
+      depleted_gas_field:
+      saline_aquifer:
+      lined_rock_cavern:
+      #carrier conversion
+      electrolyser:
+      h2_ccgt:
+      #demand
+      demand_power:
