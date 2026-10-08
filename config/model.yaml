@@ -9,8 +9,11 @@ config:
   calliope_version: 0.7.0
   mode: base
   broadcast_input_data: true
-  # math_paths: 
-  #   maths_cyclic_constraints: "custom_mathematics/add_maths_cycle_constraints.yaml"
+  math_paths:
+      uhs_storage_formulations: "custom_mathematics/uhs_storage_formulations.yaml"
+  extra_math:
+      - uhs_storage_formulations
+  pre_validate_math_strings: true
 
 data_definitions:
   objective_cost_weights: 

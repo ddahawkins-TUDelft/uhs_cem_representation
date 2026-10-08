@@ -1,0 +1,775 @@
+# =============================================================================
+# UHS storage formulation extensions for Calliope 0.7
+# =============================================================================
+#
+# Purpose
+# -------
+# Add alternative capacity representations for underground hydrogen storage
+# (UHS) technologies while leaving Calliope's native storage formulation
+# unchanged for batteries, CAES, pumped hydro, etc.
+#
+# A technology opts into this custom formulation by defining:
+#
+#   storage_formulation: bundled
+#   storage_formulation: partially_decoupled
+#   storage_formulation: fully_decoupled
+#
+# Technologies WITHOUT `storage_formulation` continue to use Calliope's native:
+#
+#   flow_cap
+#   storage_cap
+#   flow_cap_per_storage_cap_min / max
+#   cost_flow_cap
+#   cost_storage_cap
+#   cost_om_annual
+#
+# This means, for example, conventional 2 h / 4 h / 8 h batteries can continue
+# to use the standard Calliope storage implementation.
+#
+# NOTE ON EXACT NATIVE STORAGE DURATIONS:
+# Calliope's native `flow_cap_per_storage_cap_*` parameters are P/E [h^-1].
+# If an EXACT battery duration is required, set BOTH min and max to 1/duration:
+#
+#   2 h battery: flow_cap_per_storage_cap_min = 0.5
+#                flow_cap_per_storage_cap_max = 0.5
+#
+#   4 h battery: flow_cap_per_storage_cap_min = 0.25
+#                flow_cap_per_storage_cap_max = 0.25
+#
+#   8 h battery: flow_cap_per_storage_cap_min = 0.125
+#                flow_cap_per_storage_cap_max = 0.125
+#
+# Setting only `flow_cap_per_storage_cap_max` imposes a MINIMUM duration
+# (E/P >= duration), not an exact duration.
+#
+#
+# Custom UHS capacity variables
+# -----------------------------
+#
+# For every technology with `storage_formulation` defined, the standard shared
+# `flow_cap` is replaced by three component-level capacity decisions:
+#
+#   P_in  = flow_in_cap   [power]
+#           installed injection / charging capacity
+#
+#   P_out = flow_out_cap  [power]
+#           installed withdrawal / discharging capacity
+#
+#   E     = storage_cap   [energy]
+#           installed working-gas / storage-energy capacity
+#
+# `storage_cap` remains Calliope's STANDARD storage-capacity variable. Only the
+# shared power-capacity representation is replaced.
+#
+#
+# Formulation notation
+# --------------------
+#
+# WTIR = withdrawal-to-injection capacity ratio:
+#
+#     WTIR = P_out / P_in
+#
+# EPR = energy-to-power ratio (storage duration), referenced to withdrawal:
+#
+#     EPR = E / P_out      [hours]
+#
+# Withdrawal power is used as the EPR reference because storage duration is
+# conventionally expressed relative to discharge / withdrawal power.
+#
+#
+# Formulations
+# ------------
+#
+# 1. bundled
+#
+#       P_out = WTIR * P_in
+#       E     = EPR  * P_out
+#
+#    Both WTIR and EPR are equality constraints.
+#
+#
+# 2. partially_decoupled
+#
+#       P_out = WTIR * P_in
+#
+#    WTIR remains an equality constraint, while EPR is free unless optional
+#    lower and/or upper duration bounds are supplied:
+#
+#       E >= EPR_min * P_out
+#       E <= EPR_max * P_out
+#
+#    Thus the user can represent, for example, duration >= 500 h,
+#    duration <= 500 h, or 200 h <= duration <= 500 h.
+#
+#
+# 3. fully_decoupled
+#
+#       P_in, P_out, and E are independent investment decisions.
+#
+#    No WTIR or EPR coupling constraints are imposed. Absolute component bounds
+#    (flow_in_cap_min/max, flow_out_cap_min/max, storage_cap_min/max) can still
+#    be used to represent physical/resource limits.
+#
+#
+# Cost treatment
+# --------------
+#
+# The SAME component-level techno-economic data are used for all formulations:
+#
+#   injection:
+#       cost_flow_in_cap
+#       cost_om_annual_flow_in_cap
+#       cost_flow_in                  (native Calliope variable OPEX)
+#
+#   withdrawal:
+#       cost_flow_out_cap
+#       cost_om_annual_flow_out_cap
+#       cost_flow_out                 (native Calliope variable OPEX)
+#
+#   storage reservoir:
+#       cost_storage_cap              (native Calliope storage CAPEX)
+#       cost_om_annual_storage_cap
+#
+# Therefore switching `storage_formulation` changes only the feasible
+# relationships between P_in, P_out, and E. It does NOT require formulation-
+# specific cost data.
+#
+#
+# Important
+# ---------
+#
+# This file is intended as EXTRA math layered on Calliope's base formulation,
+# not as a replacement base-math file.
+#
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Lookups
+# -----------------------------------------------------------------------------
+
+lookups:
+
+  storage_formulation:
+    title: UHS storage formulation
+    description: >-
+      Capacity representation used by a custom underground hydrogen storage
+      technology. If this lookup is not defined, the technology remains on
+      Calliope's native storage formulation.
+    dtype: string
+    one_of:
+      - bundled
+      - partially_decoupled
+      - fully_decoupled
+
+
+# -----------------------------------------------------------------------------
+# Custom parameters
+# -----------------------------------------------------------------------------
+
+parameters:
+
+  # ---------------------------------------------------------------------------
+  # Directional power-capacity bounds
+  #
+  # These replace flow_cap_min / flow_cap_max for technologies that define
+  # `storage_formulation`.
+  # ---------------------------------------------------------------------------
+
+  flow_in_cap_min:
+    title: Minimum injection capacity
+    description: >-
+      Minimum installed injection / charging power capacity, P_in.
+    default: 0
+    unit: power
+
+  flow_in_cap_max:
+    title: Maximum injection capacity
+    description: >-
+      Maximum installed injection / charging power capacity, P_in.
+    default: .inf
+    unit: power
+
+  flow_out_cap_min:
+    title: Minimum withdrawal capacity
+    description: >-
+      Minimum installed withdrawal / discharging power capacity, P_out.
+    default: 0
+    unit: power
+
+  flow_out_cap_max:
+    title: Maximum withdrawal capacity
+    description: >-
+      Maximum installed withdrawal / discharging power capacity, P_out.
+    default: .inf
+    unit: power
+
+
+  # ---------------------------------------------------------------------------
+  # Capacity-coupling parameters
+  # ---------------------------------------------------------------------------
+
+  withdrawal_to_injection_ratio:
+    title: Withdrawal-to-injection capacity ratio
+    description: >-
+      WTIR = P_out / P_in. Required for bundled and partially-decoupled
+      formulations. Ignored by the fully-decoupled formulation.
+    unit: unitless
+
+  energy_to_power_ratio:
+    title: Energy-to-power ratio
+    description: >-
+      Exact EPR = E / P_out in hours. Required by the bundled formulation.
+      Ignored by partially-decoupled and fully-decoupled formulations.
+    unit: hour
+
+  energy_to_power_ratio_min:
+    title: Minimum energy-to-power ratio
+    description: >-
+      Optional minimum EPR = E / P_out in hours for the partially-decoupled
+      formulation. If supplied, imposes E >= EPR_min * P_out.
+    unit: hour
+
+  energy_to_power_ratio_max:
+    title: Maximum energy-to-power ratio
+    description: >-
+      Optional maximum EPR = E / P_out in hours for the partially-decoupled
+      formulation. If supplied, imposes E <= EPR_max * P_out.
+    unit: hour
+
+
+  # ---------------------------------------------------------------------------
+  # Component investment costs
+  #
+  # `cost_storage_cap` remains Calliope's native reservoir/storage-energy CAPEX.
+  # ---------------------------------------------------------------------------
+
+  cost_flow_in_cap:
+    title: Injection capacity investment cost
+    description: >-
+      Investment cost per unit of installed injection / charging capacity.
+    default: 0
+    unit: cost/power
+
+  cost_flow_out_cap:
+    title: Withdrawal capacity investment cost
+    description: >-
+      Investment cost per unit of installed withdrawal / discharging capacity.
+    default: 0
+    unit: cost/power
+
+
+  # ---------------------------------------------------------------------------
+  # Component fixed annual O&M
+  #
+  # Variable O&M remains Calliope-native:
+  #   cost_flow_in  -> variable cost on injected energy
+  #   cost_flow_out -> variable cost on withdrawn energy
+  # ---------------------------------------------------------------------------
+
+  cost_om_annual_flow_in_cap:
+    title: Injection capacity annual O&M
+    description: >-
+      Fixed annual operating cost per unit of installed injection capacity.
+    default: 0
+    unit: cost/power
+
+  cost_om_annual_flow_out_cap:
+    title: Withdrawal capacity annual O&M
+    description: >-
+      Fixed annual operating cost per unit of installed withdrawal capacity.
+    default: 0
+    unit: cost/power
+
+  cost_om_annual_storage_cap:
+    title: Storage capacity annual O&M
+    description: >-
+      Fixed annual operating cost per unit of installed storage-energy capacity.
+    default: 0
+    unit: cost/energy
+
+
+# -----------------------------------------------------------------------------
+# Input checks
+#
+# These fail early with a useful message rather than allowing an incompletely
+# specified formulation to propagate into the optimisation problem.
+# -----------------------------------------------------------------------------
+
+checks:
+
+  storage_formulation_only_on_storage_techs:
+    where: storage_formulation AND NOT base_tech==storage
+    message: >-
+      `storage_formulation` may only be assigned to technologies with
+      `base_tech: storage`.
+    errors: raise
+
+  bundled_requires_wtir:
+    where: storage_formulation==bundled AND NOT withdrawal_to_injection_ratio
+    message: >-
+      A bundled storage technology must define
+      `withdrawal_to_injection_ratio` (WTIR = P_out / P_in).
+    errors: raise
+
+  bundled_requires_epr:
+    where: storage_formulation==bundled AND NOT energy_to_power_ratio
+    message: >-
+      A bundled storage technology must define `energy_to_power_ratio`
+      (EPR = E / P_out, in hours).
+    errors: raise
+
+  partially_decoupled_requires_wtir:
+    where: >-
+      storage_formulation==partially_decoupled
+      AND NOT withdrawal_to_injection_ratio
+    message: >-
+      A partially-decoupled storage technology must define
+      `withdrawal_to_injection_ratio` (WTIR = P_out / P_in).
+    errors: raise
+
+  wtir_must_be_positive:
+    where: >-
+      (
+        storage_formulation==bundled
+        OR storage_formulation==partially_decoupled
+      )
+      AND withdrawal_to_injection_ratio<=0
+    message: >-
+      `withdrawal_to_injection_ratio` must be strictly greater than zero.
+    errors: raise
+
+  exact_epr_must_be_positive:
+    where: >-
+      storage_formulation==bundled
+      AND energy_to_power_ratio<=0
+    message: >-
+      `energy_to_power_ratio` must be strictly greater than zero.
+    errors: raise
+
+  minimum_epr_must_be_positive:
+    where: >-
+      storage_formulation==partially_decoupled
+      AND energy_to_power_ratio_min<=0
+    message: >-
+      `energy_to_power_ratio_min` must be strictly greater than zero.
+    errors: raise
+
+  maximum_epr_must_be_positive:
+    where: >-
+      storage_formulation==partially_decoupled
+      AND energy_to_power_ratio_max<=0
+    message: >-
+      `energy_to_power_ratio_max` must be strictly greater than zero.
+    errors: raise
+
+  epr_bounds_must_be_ordered:
+    where: >-
+      storage_formulation==partially_decoupled
+      AND energy_to_power_ratio_min
+      AND energy_to_power_ratio_max
+      AND energy_to_power_ratio_min>energy_to_power_ratio_max
+    message: >-
+      `energy_to_power_ratio_min` cannot exceed
+      `energy_to_power_ratio_max`.
+    errors: raise
+
+
+# -----------------------------------------------------------------------------
+# Decision variables
+# -----------------------------------------------------------------------------
+
+variables:
+
+  # ---------------------------------------------------------------------------
+  # Override Calliope's native shared `flow_cap`.
+  #
+  # Native technologies (including batteries, CAES, pumped hydro, etc.) retain
+  # the standard Calliope variable and all native flow/storage coupling.
+  #
+  # Technologies that define `storage_formulation` instead use `flow_in_cap`
+  # and `flow_out_cap` below.
+  # ---------------------------------------------------------------------------
+
+  flow_cap:
+    where: >-
+      (carrier_in OR carrier_out)
+      AND NOT storage_formulation
+
+
+  # ---------------------------------------------------------------------------
+  # P_in: injection / charging capacity
+  # ---------------------------------------------------------------------------
+
+  flow_in_cap:
+    title: Injection capacity
+    description: >-
+      Installed injection / charging power capacity, P_in, for technologies
+      using the custom UHS storage formulation.
+    foreach: [nodes, techs, carriers]
+    where: storage_formulation AND carrier_in
+    domain: real
+    unit: power
+    default: 0
+    bounds:
+      min: flow_in_cap_min
+      max: flow_in_cap_max
+
+
+  # ---------------------------------------------------------------------------
+  # P_out: withdrawal / discharging capacity
+  # ---------------------------------------------------------------------------
+
+  flow_out_cap:
+    title: Withdrawal capacity
+    description: >-
+      Installed withdrawal / discharging power capacity, P_out, for technologies
+      using the custom UHS storage formulation.
+    foreach: [nodes, techs, carriers]
+    where: storage_formulation AND carrier_out
+    domain: real
+    unit: power
+    default: 0
+    bounds:
+      min: flow_out_cap_min
+      max: flow_out_cap_max
+
+
+# -----------------------------------------------------------------------------
+# Constraints
+# -----------------------------------------------------------------------------
+
+constraints:
+
+  # ---------------------------------------------------------------------------
+  # Directional flow limits
+  #
+  # Override the equations in Calliope's native flow_in_max / flow_out_max
+  # constraints. Their existing foreach/where definitions are inherited from
+  # base math.
+  #
+  # Native technologies:
+  #     flow_in  <= flow_cap     * timestep_resolution
+  #     flow_out <= flow_cap     * timestep_resolution
+  #                              * flow_out_parasitic_eff
+  #
+  # Custom UHS technologies:
+  #     flow_in  <= flow_in_cap  * timestep_resolution
+  #     flow_out <= flow_out_cap * timestep_resolution
+  #                              * flow_out_parasitic_eff
+  # ---------------------------------------------------------------------------
+
+  flow_in_max:
+    equations:
+      - where: storage_formulation
+        expression: >-
+          flow_in
+          <= flow_in_cap * timestep_resolution
+
+      - where: NOT storage_formulation
+        expression: >-
+          flow_in
+          <= flow_cap * timestep_resolution
+
+
+  flow_out_max:
+    equations:
+      - where: storage_formulation
+        expression: >-
+          flow_out
+          <= flow_out_cap
+          * timestep_resolution
+          * flow_out_parasitic_eff
+
+      - where: NOT storage_formulation
+        expression: >-
+          flow_out
+          <= flow_cap
+          * timestep_resolution
+          * flow_out_parasitic_eff
+
+
+  # ---------------------------------------------------------------------------
+  # WTIR equality
+  #
+  # Applies to:
+  #   - bundled
+  #   - partially_decoupled
+  #
+  # Does NOT apply to:
+  #   - fully_decoupled
+  #
+  # Definition:
+  #
+  #     WTIR = P_out / P_in
+  #
+  # therefore:
+  #
+  #     P_out = WTIR * P_in
+  # ---------------------------------------------------------------------------
+
+  storage_wtir:
+    title: Withdrawal-to-injection capacity ratio
+    description: >-
+      Fix withdrawal capacity relative to injection capacity for bundled and
+      partially-decoupled UHS representations.
+    foreach: [nodes, techs, carriers]
+    where: >-
+      (
+        storage_formulation==bundled
+        OR storage_formulation==partially_decoupled
+      )
+      AND flow_in_cap
+      AND flow_out_cap
+    equations:
+      - expression: >-
+          flow_out_cap
+          == withdrawal_to_injection_ratio * flow_in_cap
+
+
+  # ---------------------------------------------------------------------------
+  # Bundled EPR equality
+  #
+  # Applies only to:
+  #   - bundled
+  #
+  # Definition:
+  #
+  #     EPR = E / P_out
+  #
+  # therefore:
+  #
+  #     E = EPR * P_out
+  #
+  # Example:
+  #     energy_to_power_ratio: 500
+  #
+  # gives an exact 500-hour store relative to withdrawal power.
+  # ---------------------------------------------------------------------------
+
+  bundled_storage_epr:
+    title: Bundled storage energy-to-power ratio
+    description: >-
+      Fix storage-energy capacity to withdrawal power according to an exact
+      energy-to-power ratio for bundled UHS.
+    foreach: [nodes, techs, carriers]
+    where: >-
+      storage_formulation==bundled
+      AND storage_cap
+      AND flow_out_cap
+    equations:
+      - expression: >-
+          storage_cap
+          == energy_to_power_ratio * flow_out_cap
+
+
+  # ---------------------------------------------------------------------------
+  # Partially-decoupled EPR lower bound
+  #
+  # Optional. Active only if `energy_to_power_ratio_min` is supplied.
+  #
+  #     E / P_out >= EPR_min
+  #
+  # is represented linearly as:
+  #
+  #     E >= EPR_min * P_out
+  #
+  # Example:
+  #     energy_to_power_ratio_min: 500
+  #
+  # means storage duration >= 500 h.
+  # ---------------------------------------------------------------------------
+
+  partially_decoupled_storage_epr_min:
+    title: Partially-decoupled minimum energy-to-power ratio
+    description: >-
+      Optionally impose a minimum storage duration relative to withdrawal
+      capacity in the partially-decoupled formulation.
+    foreach: [nodes, techs, carriers]
+    where: >-
+      storage_formulation==partially_decoupled
+      AND storage_cap
+      AND flow_out_cap
+      AND energy_to_power_ratio_min
+    equations:
+      - expression: >-
+          storage_cap
+          >= energy_to_power_ratio_min * flow_out_cap
+
+
+  # ---------------------------------------------------------------------------
+  # Partially-decoupled EPR upper bound
+  #
+  # Optional. Active only if `energy_to_power_ratio_max` is supplied.
+  #
+  #     E / P_out <= EPR_max
+  #
+  # is represented linearly as:
+  #
+  #     E <= EPR_max * P_out
+  #
+  # Example:
+  #     energy_to_power_ratio_max: 500
+  #
+  # means storage duration <= 500 h.
+  #
+  # Note: optimisation constraints are non-strict, so "< 500 h" is represented
+  # as "<= 500 h" (and similarly for ">").
+  # ---------------------------------------------------------------------------
+
+  partially_decoupled_storage_epr_max:
+    title: Partially-decoupled maximum energy-to-power ratio
+    description: >-
+      Optionally impose a maximum storage duration relative to withdrawal
+      capacity in the partially-decoupled formulation.
+    foreach: [nodes, techs, carriers]
+    where: >-
+      storage_formulation==partially_decoupled
+      AND storage_cap
+      AND flow_out_cap
+      AND energy_to_power_ratio_max
+    equations:
+      - expression: >-
+          storage_cap
+          <= energy_to_power_ratio_max * flow_out_cap
+
+
+  # ---------------------------------------------------------------------------
+  # Fully-decoupled formulation
+  #
+  # No additional coupling constraint is required.
+  #
+  # With:
+  #     storage_formulation: fully_decoupled
+  #
+  # the optimisation independently chooses:
+  #
+  #     flow_in_cap   = P_in
+  #     flow_out_cap  = P_out
+  #     storage_cap   = E
+  #
+  # subject only to their individual bounds and the ordinary storage-energy
+  # balance / dispatch constraints inherited from Calliope.
+  # ---------------------------------------------------------------------------
+
+
+# -----------------------------------------------------------------------------
+# Cost accounting
+# -----------------------------------------------------------------------------
+
+global_expressions:
+
+  # ---------------------------------------------------------------------------
+  # Injection-capacity CAPEX
+  #
+  # Defined before Calliope's existing `cost_investment` expression because the
+  # latter is extended below to include this component.
+  # ---------------------------------------------------------------------------
+
+  cost_investment_flow_in_cap:
+    title: Injection capacity investment cost
+    description: >-
+      Total investment cost associated with installed injection capacity.
+    foreach: [nodes, techs, carriers, costs]
+    where: flow_in_cap AND cost_flow_in_cap
+    equations:
+      - expression: >-
+          cost_flow_in_cap * flow_in_cap
+    unit: cost
+    default: 0
+    order: -1
+
+
+  # ---------------------------------------------------------------------------
+  # Withdrawal-capacity CAPEX
+  # ---------------------------------------------------------------------------
+
+  cost_investment_flow_out_cap:
+    title: Withdrawal capacity investment cost
+    description: >-
+      Total investment cost associated with installed withdrawal capacity.
+    foreach: [nodes, techs, carriers, costs]
+    where: flow_out_cap AND cost_flow_out_cap
+    equations:
+      - expression: >-
+          cost_flow_out_cap * flow_out_cap
+    unit: cost
+    default: 0
+    order: -1
+
+
+  # ---------------------------------------------------------------------------
+  # Extend Calliope's native total investment-cost expression.
+  #
+  # Native components remain unchanged:
+  #   cost_investment_flow_cap
+  #   cost_investment_storage_cap
+  #   cost_investment_source_cap
+  #   cost_investment_area_use
+  #
+  # We add:
+  #   cost_investment_flow_in_cap
+  #   cost_investment_flow_out_cap
+  #
+  # The resulting `cost_investment` is still passed through Calliope's standard
+  # lifetime / interest-rate annualisation (`cost_investment_annualised`).
+  # ---------------------------------------------------------------------------
+
+  cost_investment:
+    where: >-
+      cost_investment_flow_cap
+      OR cost_investment_storage_cap
+      OR cost_investment_source_cap
+      OR cost_investment_area_use
+      OR cost_investment_flow_in_cap
+      OR cost_investment_flow_out_cap
+    equations:
+      - expression: >-
+          sum(cost_investment_flow_cap, over=carriers)
+          + cost_investment_storage_cap
+          + cost_investment_source_cap
+          + cost_investment_area_use
+          + sum(cost_investment_flow_in_cap, over=carriers)
+          + sum(cost_investment_flow_out_cap, over=carriers)
+
+
+  # ---------------------------------------------------------------------------
+  # Extend Calliope's native fixed annual O&M expression.
+  #
+  # Native technologies retain:
+  #
+  #   cost_om_annual * flow_cap
+  #
+  # Custom UHS technologies can independently specify:
+  #
+  #   cost_om_annual_flow_in_cap  * P_in
+  #   cost_om_annual_flow_out_cap * P_out
+  #   cost_om_annual_storage_cap  * E
+  #
+  # `cost_om_annual_investment_fraction` remains available unchanged.
+  #
+  # The base `annualisation_weight` sub-expression is inherited.
+  # ---------------------------------------------------------------------------
+
+  cost_operation_fixed:
+    where: >-
+      (cost_om_annual AND flow_cap)
+      OR (cost_om_annual_flow_in_cap AND flow_in_cap)
+      OR (cost_om_annual_flow_out_cap AND flow_out_cap)
+      OR (cost_om_annual_storage_cap AND storage_cap AND storage_formulation)
+      OR (cost_investment AND cost_om_annual_investment_fraction)
+    equations:
+      - expression: >-
+          $annualisation_weight * (
+            sum(cost_om_annual * flow_cap, over=carriers)
+            + sum(
+                cost_om_annual_flow_in_cap * flow_in_cap,
+                over=carriers
+              )
+            + sum(
+                cost_om_annual_flow_out_cap * flow_out_cap,
+                over=carriers
+              )
+            + cost_om_annual_storage_cap * storage_cap
+            + cost_investment * cost_om_annual_investment_fraction
+          )

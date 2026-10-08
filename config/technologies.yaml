@@ -1,22 +1,692 @@
+# =============================================================================
+# TECHNOLOGY DEFINITIONS
+# =============================================================================
+#
+# Cost convention used throughout this file:
+#   power CAPEX:        million EUR / MW
+#   energy CAPEX:       million EUR / MWh
+#   fixed O&M (power):  million EUR / MW / year
+#   fixed O&M (energy): million EUR / MWh / year
+#   variable OPEX:      million EUR / MWh throughput
+#
+# Primary source for non-UHS techno-economic assumptions:
+#   PyPSA technology-data, 2030 output (used by the PyPSA model family)
+#   https://github.com/PyPSA/technology-data
+#   https://raw.githubusercontent.com/PyPSA/technology-data/master/outputs/costs_2030.csv
+#   Accessed 2026-10-08.
+#
+# Values from PyPSA which are quoted as FOM [% of CAPEX/year] are converted
+# here to absolute annual O&M because Calliope's `cost_om_annual` is an
+# absolute cost per unit of installed capacity.
+#
+# =============================================================================
+
 techs:
-      #generation
-      solar:
-      onshore_wind:
-      offshore_wind:
-      nuclear:
-      biomass:
-      hydro_run_of_river:
-      geothermal:
-      #storage
-      battery_2h:
-      battery_4h:
-      battery_8h:
-      compressed_air_storage:
-      pumped_hydro:
-      salt_cavern:
-      depleted_gas_field:
-      saline_aquifer:
-      lined_rock_cavern:
-      #carrier conversion
-      electrolyser:
-      h2_ccgt:
+
+  # ===========================================================================
+  # VARIABLE RENEWABLE GENERATION
+  #
+  # `source_use_max` time series will be attached separately. With
+  # `source_unit: per_cap`, these are interpreted as per-unit availability /
+  # capacity-factor series.
+  # ===========================================================================
+
+  solar:
+    name: "Utility Solar PV"
+    base_tech: supply
+    carrier_out: power
+    source_unit: per_cap
+    # Source: PyPSA technology-data 2030, `solar-utility`.
+    # https://raw.githubusercontent.com/PyPSA/technology-data/master/outputs/costs_2030.csv
+    lifetime: 40
+    cost_flow_cap:                    # 482.4785 EUR/kW = 0.4824785 MEUR/MW
+      data: 0.4824785
+      index: monetary
+      dims: costs
+    cost_om_annual:                   # 2.4757%/yr * CAPEX
+      data: 0.0119447202
+      index: monetary
+      dims: costs
+    cost_flow_out:
+      data: 0.0                       # No utility-PV VOM reported; assumed zero
+      index: monetary
+      dims: costs
+
+  onshore_wind:
+    name: "Onshore Wind"
+    base_tech: supply
+    carrier_out: power
+    source_unit: per_cap
+    # Source: PyPSA technology-data 2030, `onwind`.
+    # https://raw.githubusercontent.com/PyPSA/technology-data/master/outputs/costs_2030.csv
+    lifetime: 30
+    cost_flow_cap:                    # 1383.3059 EUR/kW
+      data: 1.3833059
+      index: monetary
+      dims: costs
+    cost_om_annual:                   # 1.2167%/yr * CAPEX
+      data: 0.0168306829
+      index: monetary
+      dims: costs
+    cost_flow_out:                    # 1.8033 EUR/MWh
+      data: 0.0000018033
+      index: monetary
+      dims: costs
+
+  offshore_wind:
+    name: "Offshore Wind"
+    base_tech: supply
+    carrier_out: power
+    source_unit: per_cap
+    # Lifetime basis: PyPSA technology-data 2030, `offwind`.
+    # PyPSA's `offwind` CAPEX explicitly EXCLUDES offshore-grid connection
+    # costs because PyPSA-Eur models those separately. We therefore leave the
+    # economic parameters TODO pending an all-in offshore-wind source that
+    # includes export / landing connection costs.
+    # https://raw.githubusercontent.com/PyPSA/technology-data/master/outputs/costs_2030.csv
+    lifetime: 30
+    cost_flow_cap:
+      data: # TODO - all-in offshore wind CAPEX including grid connection
+      index: monetary
+      dims: costs
+    cost_om_annual:
+      data: # TODO - align with selected all-in offshore wind source
+      index: monetary
+      dims: costs
+    cost_flow_out:
+      data: # TODO - align with selected all-in offshore wind source
+      index: monetary
+      dims: costs
+
+
+  # ===========================================================================
+  # FIRM / DISPATCHABLE GENERATION
+  #
+  # These remain simple electricity `supply` technologies. Where PyPSA provides
+  # a fuel price and conversion efficiency, fuel cost is folded into
+  # `cost_flow_out`:
+  #
+  #     marginal cost = VOM + fuel_cost / efficiency
+  #
+  # This avoids introducing explicit fuel-carrier networks solely for these
+  # background generation technologies.
+  # ===========================================================================
+
+  nuclear:
+    name: "Nuclear"
+    base_tech: supply
+    carrier_out: power
+    # Source: PyPSA technology-data 2030, `nuclear`.
+    # CAPEX/FOM/VOM basis ultimately from Lazard v16; fuel from TYNDP inputs.
+    # https://raw.githubusercontent.com/PyPSA/technology-data/master/outputs/costs_2030.csv
+    lifetime: 40
+    cost_flow_cap:                    # 10805.7038 EUR/kW
+      data: 10.8057038
+      index: monetary
+      dims: costs
+    cost_om_annual:                   # 1.27%/yr * CAPEX
+      data: 0.1372324383
+      index: monetary
+      dims: costs
+    cost_flow_out:                    # 4.459 + 7.4536 / 0.326 = 27.3228 EUR/MWh_e
+      data: 0.0000273228
+      index: monetary
+      dims: costs
+
+  biomass:
+    name: "Biomass Power"
+    base_tech: supply
+    carrier_out: power
+    # Source: PyPSA technology-data 2030.
+    # Plant proxy: `central solid biomass CHP`, electricity-side parameters.
+    # Fuel: `solid biomass`.
+    # Because this model is electricity-only, heat output is ignored and fuel
+    # cost is folded into electricity marginal cost.
+    # https://raw.githubusercontent.com/PyPSA/technology-data/master/outputs/costs_2030.csv
+    lifetime: 25
+    cost_flow_cap:                    # 4474.2578 EUR/kW_e
+      data: 4.4742578
+      index: monetary
+      dims: costs
+    cost_om_annual:                   # 2.8661%/yr * CAPEX
+      data: 0.1282367028
+      index: monetary
+      dims: costs
+    cost_flow_out:                    # 6.1237 + 17.3312 / 0.2699 = 70.3371 EUR/MWh_e
+      data: 0.0000703371
+      index: monetary
+      dims: costs
+
+  geothermal:
+    name: "Geothermal Power"
+    base_tech: supply
+    carrier_out: power
+    # Interim proxy: PyPSA technology-data 2030 `organic rankine cycle`.
+    # https://raw.githubusercontent.com/PyPSA/technology-data/master/outputs/costs_2030.csv
+    # IMPORTANT: this is the ORC electrical-conversion component only; it does
+    # not provide a complete site-specific geothermal wellfield / drilling
+    # CAPEX. Retain as an interim proxy pending improved geothermal data.
+    lifetime: 30
+    cost_flow_cap:                    # 1730.0924 EUR/kW_el
+      data: 1.7300924
+      index: monetary
+      dims: costs
+    cost_om_annual:                   # 2.0%/yr * CAPEX
+      data: 0.0346018480
+      index: monetary
+      dims: costs
+    cost_flow_out:
+      data: 0.0                       # No VOM supplied for ORC proxy
+      index: monetary
+      dims: costs
+
+
+  # ===========================================================================
+  # RUN-OF-RIVER HYDRO
+  #
+  # Modelled as non-storing supply. Country-specific existing/resource
+  # capacities should be constrained in scenarios because new RoR expansion is
+  # generally not freely available.
+  #
+  # `source_use_max` should be an electrical availability / capacity-factor
+  # series. Therefore source_eff = 1 rather than reapplying PyPSA's 0.9
+  # hydrological conversion efficiency to an already-electrical profile.
+  # ===========================================================================
+
+  hydro_run_of_river:
+    name: "Run-of-River Hydro"
+    base_tech: supply
+    carrier_out: power
+    source_unit: per_cap
+    source_eff: 1.0
+    # Source: PyPSA technology-data 2030, `ror`.
+    # PyPSA notes these are legacy DIW / IEA assumptions.
+    # https://raw.githubusercontent.com/PyPSA/technology-data/master/outputs/costs_2030.csv
+    lifetime: 80
+    cost_flow_cap:                    # 4332.7919 EUR/kW_el
+      data: 4.3327919
+      index: monetary
+      dims: costs
+    cost_om_annual:                   # 2.0%/yr * CAPEX
+      data: 0.0866558380
+      index: monetary
+      dims: costs
+    cost_flow_out:
+      data: 0.0                       # No RoR VOM supplied
+      index: monetary
+      dims: costs
+
+
+  # ===========================================================================
+  # CONVENTIONAL ELECTRICITY STORAGE
+  #
+  # These technologies use Calliope's native storage formulation.
+  #
+  # Batteries:
+  #   exact duration is imposed by setting both native P/E ratio bounds to
+  #   1/duration. Battery CAPEX is intentionally priced entirely against
+  #   `storage_cap` [MWh], not `flow_cap` [MW].
+  #
+  #   PyPSA components:
+  #       battery inverter = 213.9279 EUR/kW
+  #       battery storage  = 189.8610 EUR/kWh
+  #
+  #   For a fixed duration D:
+  #
+  #       all-in CAPEX [EUR/kWh] =
+  #           battery_storage + battery_inverter / D
+  #
+  #   Thus there is NO `cost_flow_cap` on the batteries below.
+  #
+  #   PyPSA quotes inverter efficiency = 0.96 as round-trip efficiency; PyPSA
+  #   applies sqrt(0.96) symmetrically to charge and discharge, which we mirror.
+  #
+  # ===========================================================================
+
+  battery_2h:
+    name: "Lithium-Ion Battery - 2 h"
+    base_tech: storage
+    carrier_in: power
+    carrier_out: power
+    # Source: PyPSA technology-data 2030, `battery inverter` + `battery storage`.
+    # https://raw.githubusercontent.com/PyPSA/technology-data/master/outputs/costs_2030.csv
+    # Composite lifetime is a modelling assumption: 20 y, between PyPSA's
+    # 10-y inverter and 25-y storage-component lifetimes.
+    lifetime: 20
+    cyclic_storage: true
+    flow_cap_per_storage_cap_min: 0.5
+    flow_cap_per_storage_cap_max: 0.5
+    flow_in_eff: 0.9797958971
+    flow_out_eff: 0.9797958971
+    storage_loss: 0.0
+    cost_storage_cap:                # 189.861 + 213.9279/2 = 296.82495 EUR/kWh
+      data: 0.2968249500
+      index: monetary
+      dims: costs
+    cost_om_annual:                  # inverter FOM: 0.3375%/yr * 213.9279 EUR/kW
+      data: 0.0007220067
+      index: monetary
+      dims: costs
+    cost_flow_in:
+      data: 0.0                      # No battery VOM in selected PyPSA rows
+      index: monetary
+      dims: costs
+    cost_flow_out:
+      data: 0.0
+      index: monetary
+      dims: costs
+
+  battery_4h:
+    name: "Lithium-Ion Battery - 4 h"
+    base_tech: storage
+    carrier_in: power
+    carrier_out: power
+    # Source/basis: same as battery_2h.
+    # https://raw.githubusercontent.com/PyPSA/technology-data/master/outputs/costs_2030.csv
+    lifetime: 20
+    cyclic_storage: true
+    flow_cap_per_storage_cap_min: 0.25
+    flow_cap_per_storage_cap_max: 0.25
+    flow_in_eff: 0.9797958971
+    flow_out_eff: 0.9797958971
+    storage_loss: 0.0
+    cost_storage_cap:                # 189.861 + 213.9279/4 = 243.342975 EUR/kWh
+      data: 0.2433429750
+      index: monetary
+      dims: costs
+    cost_om_annual:
+      data: 0.0007220067
+      index: monetary
+      dims: costs
+    cost_flow_in:
+      data: 0.0
+      index: monetary
+      dims: costs
+    cost_flow_out:
+      data: 0.0
+      index: monetary
+      dims: costs
+
+  battery_8h:
+    name: "Lithium-Ion Battery - 8 h"
+    base_tech: storage
+    carrier_in: power
+    carrier_out: power
+    # Source/basis: same as battery_2h.
+    # https://raw.githubusercontent.com/PyPSA/technology-data/master/outputs/costs_2030.csv
+    lifetime: 20
+    cyclic_storage: true
+    flow_cap_per_storage_cap_min: 0.125
+    flow_cap_per_storage_cap_max: 0.125
+    flow_in_eff: 0.9797958971
+    flow_out_eff: 0.9797958971
+    storage_loss: 0.0
+    cost_storage_cap:                # 189.861 + 213.9279/8 = 216.6019875 EUR/kWh
+      data: 0.2166019875
+      index: monetary
+      dims: costs
+    cost_om_annual:
+      data: 0.0007220067
+      index: monetary
+      dims: costs
+    cost_flow_in:
+      data: 0.0
+      index: monetary
+      dims: costs
+    cost_flow_out:
+      data: 0.0
+      index: monetary
+      dims: costs
+  # ===========================================================================
+  # Long-duration energy storage
+  #
+  # These use the custom `uhs_storage_formulations.yaml` math.
+  # ===========================================================================
+
+  compressed_air_storage:
+    name: "Compressed Air Energy Storage"
+    base_tech: storage
+    carrier_in: power
+    carrier_out: power
+    # Source: PyPSA technology-data 2030:
+    # Compressed-Air-Adiabatic-bicharger + Compressed-Air-Adiabatic-store
+    # https://raw.githubusercontent.com/PyPSA/technology-data/master/outputs/costs_2030.csv
+    lifetime: 60
+    cyclic_storage: true
+    # Use custom storage formulation so power-side and energy-side fixed O&M can be represented separately.
+    # PyPSA provides one symmetric "bicharger" power component.
+    # Setting WTIR = 1 preserves identical injection/withdrawal ratings.
+    # The bicharger CAPEX and FOM are divided equally between the two
+    # custom power-capacity variables to avoid double counting.
+    storage_formulation: partially_decoupled
+    withdrawal_to_injection_ratio: 1
+    # No EPR constraint:
+    # storage duration is chosen endogenously by the optimiser.
+    # PyPSA reports sqrt(0.52) = 0.7211 for each direction,
+    # corresponding to 52% AC-AC round-trip efficiency.
+    flow_in_eff: 0.7211
+    flow_out_eff: 0.7211
+    storage_loss: 0.0
+    cost_flow_in_cap: # 50% of 1.1896660381 MEUR/MW bicharger CAPEX
+        data: 0.5948330191
+        index: monetary
+        dims: costs
+    cost_om_annual_flow_in_cap: # 50% of bicharger FOM: 1.1896660381 * 0.9265% / 2
+        data: 0.0055111279
+        index: monetary
+        dims: costs
+    cost_flow_out_cap: # 50% of 1.1896660381 MEUR/MW bicharger CAPEX
+        data: 0.5948330191
+        index: monetary
+        dims: costs
+    cost_om_annual_flow_out_cap: # 50% of bicharger FOM: 1.1896660381 * 0.9265% / 2
+        data: 0.0055111279
+        index: monetary
+        dims: costs
+    cost_storage_cap: # 6,850.9515 EUR/MWh
+        data: 0.0068509515
+        index: monetary
+        dims: costs
+    cost_om_annual_storage_cap: # 0.43%/yr * storage CAPEX
+        data: 0.0000294591
+        index: monetary
+        dims: costs
+
+  pumped_hydro:
+    name: "Pumped Hydro Storage"
+    base_tech: storage
+    carrier_in: power
+    carrier_out: power
+    # Source: PyPSA technology-data 2030:
+    # Pumped-Storage-Hydro-bicharger + Pumped-Storage-Hydro-store
+    # https://raw.githubusercontent.com/PyPSA/technology-data/master/outputs/costs_2030.csv
+    lifetime: 60
+    cyclic_storage: true
+    # Symmetric conventional storage:
+    # P_out = P_in, but storage energy capacity remains independently sized.
+    storage_formulation: partially_decoupled
+    withdrawal_to_injection_ratio: 1
+    # No EPR constraint: 
+    # storage duration is endogenous.
+    # PyPSA reports sqrt(0.8) = 0.8944 in each direction,
+    # giving approximately 80% round-trip efficiency.
+    flow_in_eff: 0.8944
+    flow_out_eff: 0.8944
+    storage_loss: 0.0
+    cost_flow_in_cap: # 50% of 1.7566579565 MEUR/MW bicharger CAPEX
+        data: 0.8783289783
+        index: monetary
+        dims: costs
+    cost_om_annual_flow_in_cap: # 50% of power-component FOM: 1.7566579565 * 0.9951% / 2
+        data: 0.0087402517
+        index: monetary
+        dims: costs
+    cost_flow_out_cap: # 50% of 1.7566579565 MEUR/MW bicharger CAPEX
+        data: 0.8783289783
+        index: monetary
+        dims: costs
+    cost_om_annual_flow_out_cap: # 50% of power-component FOM: 1.7566579565 * 0.9951% / 2
+        data: 0.0087402517
+        index: monetary
+        dims: costs
+    cost_storage_cap: # 71,761.1936 EUR/MWh
+        data: 0.0717611936
+        index: monetary
+        dims: costs
+    cost_om_annual_storage_cap: # 0.43%/yr * storage CAPEX
+        data: 0.0003085731
+        index: monetary
+        dims: costs
+
+
+  # ===========================================================================
+  # UNDERGROUND HYDROGEN STORAGE
+  #
+  # These use the custom `uhs_storage_formulations.yaml` math.
+  # Techno-economic parameters intentionally remain TODO pending the dedicated
+  # UHS evidence synthesis.
+  # ===========================================================================
+
+  salt_cavern:
+    name: "Salt Cavern Storage"
+    base_tech: storage
+    carrier_in: hydrogen
+    carrier_out: hydrogen
+    lifetime: # TODO
+    storage_formulation: bundled
+    cyclic_storage: true
+    withdrawal_to_injection_ratio: # TODO
+    energy_to_power_ratio: # TODO
+    flow_in_eff: # TODO
+    flow_out_eff: # TODO
+    storage_loss: # TODO
+    cost_flow_in_cap:
+      data: # TODO - injection CAPEX
+      index: monetary
+      dims: costs
+    cost_om_annual_flow_in_cap:
+      data: # TODO - injection fixed O&M
+      index: monetary
+      dims: costs
+    cost_flow_in:
+      data: # TODO - injection variable OPEX
+      index: monetary
+      dims: costs
+    cost_flow_out_cap:
+      data: # TODO - withdrawal CAPEX
+      index: monetary
+      dims: costs
+    cost_om_annual_flow_out_cap:
+      data: # TODO - withdrawal fixed O&M
+      index: monetary
+      dims: costs
+    cost_flow_out:
+      data: # TODO - withdrawal variable OPEX
+      index: monetary
+      dims: costs
+    cost_storage_cap:
+      data: # TODO - reservoir CAPEX
+      index: monetary
+      dims: costs
+    cost_om_annual_storage_cap:
+      data: # TODO - reservoir fixed O&M
+      index: monetary
+      dims: costs
+
+  depleted_gas_field:
+    name: "Depleted Gas Field Storage"
+    base_tech: storage
+    carrier_in: hydrogen
+    carrier_out: hydrogen
+    lifetime: # TODO
+    storage_formulation: bundled
+    cyclic_storage: true
+    withdrawal_to_injection_ratio: # TODO
+    energy_to_power_ratio: # TODO
+    flow_in_eff: # TODO
+    flow_out_eff: # TODO
+    storage_loss: # TODO
+    cost_flow_in_cap:
+      data: # TODO
+      index: monetary
+      dims: costs
+    cost_om_annual_flow_in_cap:
+      data: # TODO
+      index: monetary
+      dims: costs
+    cost_flow_in:
+      data: # TODO
+      index: monetary
+      dims: costs
+    cost_flow_out_cap:
+      data: # TODO
+      index: monetary
+      dims: costs
+    cost_om_annual_flow_out_cap:
+      data: # TODO
+      index: monetary
+      dims: costs
+    cost_flow_out:
+      data: # TODO
+      index: monetary
+      dims: costs
+    cost_storage_cap:
+      data: # TODO
+      index: monetary
+      dims: costs
+    cost_om_annual_storage_cap:
+      data: # TODO
+      index: monetary
+      dims: costs
+
+  saline_aquifer:
+    name: "Saline Aquifer Storage"
+    base_tech: storage
+    carrier_in: hydrogen
+    carrier_out: hydrogen
+    lifetime: # TODO
+    storage_formulation: bundled
+    cyclic_storage: true
+    withdrawal_to_injection_ratio: # TODO
+    energy_to_power_ratio: # TODO
+    flow_in_eff: # TODO
+    flow_out_eff: # TODO
+    storage_loss: # TODO
+    cost_flow_in_cap:
+      data: # TODO
+      index: monetary
+      dims: costs
+    cost_om_annual_flow_in_cap:
+      data: # TODO
+      index: monetary
+      dims: costs
+    cost_flow_in:
+      data: # TODO
+      index: monetary
+      dims: costs
+    cost_flow_out_cap:
+      data: # TODO
+      index: monetary
+      dims: costs
+    cost_om_annual_flow_out_cap:
+      data: # TODO
+      index: monetary
+      dims: costs
+    cost_flow_out:
+      data: # TODO
+      index: monetary
+      dims: costs
+    cost_storage_cap:
+      data: # TODO
+      index: monetary
+      dims: costs
+    cost_om_annual_storage_cap:
+      data: # TODO
+      index: monetary
+      dims: costs
+
+  lined_rock_cavern:
+    name: "Lined Rock Cavern Storage"
+    base_tech: storage
+    carrier_in: hydrogen
+    carrier_out: hydrogen
+    lifetime: # TODO
+    storage_formulation: bundled
+    cyclic_storage: true
+    withdrawal_to_injection_ratio: # TODO
+    energy_to_power_ratio: # TODO
+    flow_in_eff: # TODO
+    flow_out_eff: # TODO
+    storage_loss: # TODO
+    cost_flow_in_cap:
+      data: # TODO
+      index: monetary
+      dims: costs
+    cost_om_annual_flow_in_cap:
+      data: # TODO
+      index: monetary
+      dims: costs
+    cost_flow_in:
+      data: # TODO
+      index: monetary
+      dims: costs
+    cost_flow_out_cap:
+      data: # TODO
+      index: monetary
+      dims: costs
+    cost_om_annual_flow_out_cap:
+      data: # TODO
+      index: monetary
+      dims: costs
+    cost_flow_out:
+      data: # TODO
+      index: monetary
+      dims: costs
+    cost_storage_cap:
+      data: # TODO
+      index: monetary
+      dims: costs
+    cost_om_annual_storage_cap:
+      data: # TODO
+      index: monetary
+      dims: costs
+
+
+  # ===========================================================================
+  # HYDROGEN CONVERSION
+  # ===========================================================================
+
+  electrolyser:
+    name: "Electrolyser"
+    base_tech: conversion
+    carrier_in: power
+    carrier_out: hydrogen
+    # Source: PyPSA technology-data 2030, `electrolysis` (100 MW AEC basis).
+    # https://raw.githubusercontent.com/PyPSA/technology-data/master/outputs/costs_2030.csv
+    lifetime: 25
+    flow_out_eff: 0.6217
+    # CAPEX/FOM are indexed to the electrical-input carrier because the quoted
+    # plant capacity is EUR/kW_e input.
+    cost_flow_cap:
+      data: [1.8860019]               # 1886.0019 EUR/kW_e
+      index: [[monetary, power]]
+      dims: [costs, carriers]
+    cost_om_annual:
+      data: [0.0754400760]            # 4.0%/yr * CAPEX
+      index: [[monetary, power]]
+      dims: [costs, carriers]
+    cost_flow_out:
+      data: 0.0                       # No VOM in selected `electrolysis` row
+      index: monetary
+      dims: costs
+
+  h2_ccgt:
+    name: "Hydrogen Combined Cycle Gas Turbine"
+    base_tech: conversion
+    carrier_in: hydrogen
+    carrier_out: power
+    # TODO: dedicated H2-CCGT assumptions to be inserted from the source
+    # identified separately. Do not proxy conventional natural-gas CCGT here.
+    lifetime: # TODO
+    flow_out_eff: # TODO
+    cost_flow_cap:
+      data: # TODO
+      index: [[monetary, power]]
+      dims: [costs, carriers]
+    cost_om_annual:
+      data: # TODO
+      index: [[monetary, power]]
+      dims: [costs, carriers]
+    cost_flow_out:
+      data: # TODO
+      index: monetary
+      dims: costs
+
+  # ===========================================================================
+  # DEMAND
+  # ===========================================================================
+
+demand_power:
+    name: "Electricity Demand"
+    base_tech: demand
+    carrier_in: power
