@@ -2,4 +2,5 @@
 .pixi/*
 !.pixi/config.toml
 
-resources/timeseries
+results/
+temp/

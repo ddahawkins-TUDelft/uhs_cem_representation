@@ -27,10 +27,9 @@ data_definitions:
     dims: costs
 
 data_tables:
-  time_varying_parameters:
-    table: ../data_tables/full_horizon/time_varying_parameters.csv
+  country_timeseries:
+    table: country_timeseries
     rows: timesteps
-    columns: [comment, nodes, techs, parameters]
-    drop: comment
-    rename_dims:
-      parameters: inputs
+    columns: [techs, inputs]
+    add_dims:
+      nodes: general_node
