@@ -8,7 +8,7 @@ version = "0.1.0"
 [tasks]
 
 [dependencies]
-python = ">=3.12.*"
+python = "3.12.*"
 
 # Energy-system modelling
 calliope = ">=0.7.0"
@@ -22,6 +22,9 @@ scipy = "*"
 scikit-learn = "*"
 xarray = "*"
 netcdf4 = "*"
+
+# API
+requests = "*"
 
 # Results storage
 pyarrow = "*"
